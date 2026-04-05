@@ -51,7 +51,7 @@ Google Cloud SDK (gcloud) authenticated to a project with Vertex AI enabled.
 Clone the repository and install dependencies:
 
 ```bash
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
