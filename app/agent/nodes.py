@@ -10,29 +10,38 @@ def retrieve_context(state: ThreatAgentState):
     return {"historical_context": "User flagged an anomaly on IP 10.0.0.5 previously."}
 
 def call_model(state: ThreatAgentState):
-    """Executes the LLM with mocked tool definitions."""
+    """Executes the LLM with the correct MCP tool definitions."""
     mcp_tool_schemas = [
         {
-            "name": "query-database",
+            "name": "read_query",
             "description": "Run a read-only SQL query against the local database to check logs.",
             "parameters": {
                 "type": "object",
-                "properties": {"sql": {"type": "string"}},
-                "required": ["sql"],
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
             },
         }
     ]
     
     llm_with_tools = llm.bind_tools(mcp_tool_schemas)
-    system_prompt = f"Context: {state.get('historical_context', '')}\n You are a SOC Data Agent."
     
-    messages = [{"role": "system", "content": system_prompt}] + state["messages"]
+    # --- THE FIX: Inject the Schema and Dialect ---
+    system_prompt = f"""Context: {state.get('historical_context', '')}
+You are an elite SOC Data Agent. 
+
+You have access to a local SQLite database to investigate alerts. 
+CRITICAL RULES FOR SQL QUERIES:
+1. DIALECT: You MUST use strictly SQLite-compatible syntax (do not use Postgres intervals like '1 day').
+2. SCHEMA: There is exactly ONE table available named `network_logs`.
+3. COLUMNS: The `network_logs` table has exactly two columns: `ip` (TEXT) and `action` (TEXT). Do NOT invent column names like src_ip.
+"""
+    
+    messages = [{"role": "system", "content": system_prompt}] + list(state["messages"])
     response = llm_with_tools.invoke(messages)
     
     return {"messages": [response]}
-
 async def execute_mcp_tools(state: ThreatAgentState):
-    """Intercepts tool calls and routes them to the local MCP server."""
+    """Intercepts tool calls and routes them dynamically to the local MCP server."""
     last_message = state["messages"][-1]
     if not last_message.tool_calls:
         return {"messages": []}
@@ -40,8 +49,11 @@ async def execute_mcp_tools(state: ThreatAgentState):
     tool_responses = []
     async with mcp_session() as session:
         for tool_call in last_message.tool_calls:
-            # Map LLM tool call to MCP tool call
-            mcp_result = await session.call_tool("query-database", arguments=tool_call["args"])
+            # We now pass the tool_call["name"] dynamically (which will be 'read_query')
+            mcp_result = await session.call_tool(
+                tool_call["name"], 
+                arguments=tool_call["args"]
+            )
             
             tool_responses.append(
                 ToolMessage(
