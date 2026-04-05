@@ -6,11 +6,11 @@ from mcp.client.stdio import stdio_client
 async def mcp_session():
     """
     Spins up an ephemeral local MCP server for the laptop demo.
-    Uses the official Postgres/SQLite MCP server via npx.
+    Uses the official Python SQLite MCP server.
     """
     server_params = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-sqlite", "local_logs.db"],
+        command="mcp-server-sqlite",
+        args=["--db-path", "local_logs.db"], # Updated to match the Python server arguments
     )
     
     async with stdio_client(server_params) as (read, write):
